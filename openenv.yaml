@@ -1,0 +1,247 @@
+# openenv.yaml
+# -------------
+# OpenEnv specification for the "Digital Workspace Architect" environment.
+# This file is consumed by OpenEnv-compatible runners and evaluation harnesses.
+
+name: digital-workspace-architect
+version: "1.0.0"
+description: >
+  An API-driven simulation where an AI agent interacts with a virtual file
+  system to organise a messy digital workspace.  The agent reads, moves,
+  renames, creates folders, appends content, and finally submits its solution
+  for grading — all through a clean REST interface backed by in-memory state.
+
+author: "Hackathon Participant"
+license: MIT
+
+# ---------------------------------------------------------------------------
+# Server configuration
+# ---------------------------------------------------------------------------
+server:
+  host: "0.0.0.0"
+  port: 7860
+  base_url: "http://localhost:7860"
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
+endpoints:
+  reset:
+    method: POST
+    path: /reset
+    description: >
+      Initialise a new episode.  Returns the initial WorkspaceObservation.
+    request_body:
+      content_type: application/json
+      schema:
+        type: object
+        required: [task_id]
+        properties:
+          task_id:
+            type: integer
+            minimum: 1
+            maximum: 3
+            description: "Which task to load (1=Sorter, 2=Renamer, 3=Linker)."
+
+  step:
+    method: POST
+    path: /step
+    description: >
+      Execute one action inside the virtual workspace.
+      Returns a WorkspaceObservation after applying the action.
+    request_body:
+      content_type: application/json
+      schema: $ref "#/schemas/action/WorkspaceAction"
+
+  state:
+    method: GET
+    path: /state
+    description: >
+      Read the current observation without advancing the episode.
+    response_schema: $ref "#/schemas/observation/WorkspaceObservation"
+
+  health:
+    method: GET
+    path: /health
+    description: "Liveness probe — returns {status: ok}."
+
+# ---------------------------------------------------------------------------
+# Schemas
+# ---------------------------------------------------------------------------
+schemas:
+  action:
+    WorkspaceAction:
+      type: object
+      required: [command]
+      properties:
+        command:
+          type: string
+          enum:
+            - read_file
+            - move_file
+            - rename_file
+            - create_folder
+            - append_to_file
+            - submit_task
+          description: "The operation to perform."
+        path:
+          type: string
+          description: >
+            Virtual path to the target file or folder.
+            Must start with '/workspace'.
+            Required for: read_file, move_file, rename_file, create_folder,
+            append_to_file.
+          example: "/workspace/DailyNotes/2026-04-01.md"
+        destination:
+          type: string
+          description: >
+            Destination folder path (move_file only).
+            Must start with '/workspace'.
+          example: "/workspace/Markdown"
+        new_name:
+          type: string
+          description: >
+            Bare new filename with no path separators (rename_file only).
+          example: "2026-04-Meeting.md"
+        content:
+          type: string
+          description: >
+            Text to append to a file (append_to_file only).
+          example: "#project-alpha"
+
+  observation:
+    WorkspaceObservation:
+      type: object
+      properties:
+        tree:
+          type: object
+          description: >
+            Nested dict representing the current virtual file system.
+            Folders are objects; files are null.
+          example:
+            Markdown:
+              readme.md: null
+            Data:
+              sales.csv: null
+        file_content:
+          type: string
+          nullable: true
+          description: "Content of the last read file, or null."
+        message:
+          type: string
+          description: "Human-readable result of the last action."
+        reward:
+          type: number
+          description: "Cumulative reward accumulated in this episode."
+        done:
+          type: boolean
+          description: "True when the episode has finished."
+        task:
+          type: string
+          description: "Current task description (always present for context)."
+        step_count:
+          type: integer
+          description: "Number of steps taken in this episode."
+
+# ---------------------------------------------------------------------------
+# Reward structure
+# ---------------------------------------------------------------------------
+rewards:
+  valid_action: 0.1
+  invalid_action: -0.05
+  task_success: 1.0
+  task_failure: -0.5
+  max_steps: 50
+
+# ---------------------------------------------------------------------------
+# Tasks
+# ---------------------------------------------------------------------------
+tasks:
+  - id: 1
+    name: "The Sorter"
+    difficulty: easy
+    description: >
+      The agent starts with a flat workspace containing files of mixed types
+      (.c, .csv, .png). It must create three folders (Code, FinTech, Media)
+      and move every file into the folder matching its extension.
+    initial_state:
+      files:
+        - "/workspace/stm32_config.c"
+        - "/workspace/radio_tx.c"
+        - "/workspace/nadexia_q1_budget.csv"
+        - "/workspace/investment_calc.csv"
+        - "/workspace/ypl_podcast_banner.png"
+    target_state:
+      tree:
+        Code:
+          stm32_config.c: null
+          radio_tx.c: null
+        FinTech:
+          nadexia_q1_budget.csv: null
+          investment_calc.csv: null
+        Media:
+          ypl_podcast_banner.png: null
+    grader:
+      type: partial_score
+      description: >
+        Rewards based on the percentage of files moved to their correct target folders.
+
+  - id: 2
+    name: "The Renamer"
+    difficulty: medium
+    description: >
+      The agent starts with four lazily-named Markdown files (file1.md …
+      file4.md).  Each file contains content that reveals the correct
+      standardised name in the format YYYY-MM-<Topic>.md.  The agent must
+      read each file and rename it accordingly.
+    initial_state:
+      files:
+        - "/workspace/file1.md"
+        - "/workspace/file2.md"
+        - "/workspace/file3.md"
+        - "/workspace/file4.md"
+    expected_filenames:
+      - "2026-01-Meeting.md"
+      - "2026-02-Review.md"
+      - "2026-03-Workshop.md"
+      - "2026-04-Meeting.md"
+    grader:
+      type: exact_filename_set
+      description: >
+        Reward 1.0 if and only if the set of filenames at the workspace root
+        exactly matches the expected_filenames list (order-insensitive).
+
+  - id: 3
+    name: "The Linker"
+    difficulty: hard
+    description: >
+      The agent has a DailyNotes folder (3 entries) and a Projects folder.
+      It must read every daily note, identify which ones mention "Formula Bharat",
+      and append the tag "#formula-bharat" (on a new line) to exactly those files.
+      Files that don't mention Formula Bharat must remain unmodified.
+    initial_state:
+      files:
+        - "/workspace/DailyNotes/2026-03-07.md"
+        - "/workspace/DailyNotes/2026-03-08.md"
+        - "/workspace/DailyNotes/2026-03-09.md"
+        - "/workspace/Projects/formula_bharat.md"
+        - "/workspace/Projects/forage_club.md"
+    files_to_tag:
+      - "/workspace/DailyNotes/2026-03-08.md"
+      - "/workspace/DailyNotes/2026-03-09.md"
+    required_tag: "#formula-bharat"
+    grader:
+      type: content_tag_check
+      description: >
+        Reward partial or full score based on tagging accuracy and original content preservation.
+
+# ---------------------------------------------------------------------------
+# Evaluation notes
+# ---------------------------------------------------------------------------
+evaluation:
+  episode_limit: 50       # maximum steps per episode
+  reset_between_tasks: true
+  metrics:
+    - cumulative_reward
+    - steps_to_completion
+    - task_success_rate

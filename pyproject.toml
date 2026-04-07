@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "digital-workspace-architect"
+version = "1.0.0"
+description = "Digital Workspace Architect OpenEnv Environment"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+    "pyyaml",
+    "openenv-core"
+]
+
+[project.scripts]
+server = "server.app:main"

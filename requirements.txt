@@ -1,0 +1,14 @@
+# requirements.txt
+# -----------------
+# Runtime dependencies for the Digital Workspace Architect OpenEnv server.
+# Pinned to minor versions for reproducibility; patch updates are safe.
+
+# Web framework & ASGI server
+fastapi>=0.111.0,<0.120.0
+uvicorn[standard]>=0.29.0,<0.35.0
+
+# Data validation (already a FastAPI dependency, pinned explicitly for clarity)
+pydantic>=2.7.0,<3.0.0
+
+# YAML parsing (used only if you extend server.py to serve openenv.yaml)
+pyyaml>=6.0.1,<7.0.0
